@@ -1,0 +1,40 @@
+{
+  "shots": [
+    {
+      "timestamp": "0:07.0",
+      "shot_type": "Mid-range jump shot (right wing)",
+      "result": "made",
+      "total_shots_made_so_far": 1,
+      "total_shots_missed_so_far": 0,
+      "total_layups_made_so_far": 0,
+      "feedback": "Maintain consistent elbow alignment for repeatable shot mechanics."
+    },
+    {
+      "timestamp": "0:12.0",
+      "shot_type": "Mid-range jump shot (right wing)",
+      "result": "made",
+      "total_shots_made_so_far": 2,
+      "total_shots_missed_so_far": 0,
+      "total_layups_made_so_far": 0,
+      "feedback": "Drive through the legs more for increased power and elevation."
+    },
+    {
+      "timestamp": "0:20.0",
+      "shot_type": "Layup (right hand)",
+      "result": "made",
+      "total_shots_made_so_far": 3,
+      "total_shots_missed_so_far": 0,
+      "total_layups_made_so_far": 1,
+      "feedback": "Explode vertically; finish with higher release point over defender."
+    },
+    {
+      "timestamp": "0:27.0",
+      "shot_type": "Mid-range jump shot (right wing)",
+      "result": "made",
+      "total_shots_made_so_far": 4,
+      "total_shots_missed_so_far": 0,
+      "total_layups_made_so_far": 1,
+      "feedback": "Quicken shot preparation; eliminate unnecessary pre-shot movements."
+    }
+  ]
+}
