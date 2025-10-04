@@ -1,0 +1,6 @@
+opencv-python
+protobuf==4.25.3
+mediapipe
+numpy
+google-generativeai
+python-dotenv
