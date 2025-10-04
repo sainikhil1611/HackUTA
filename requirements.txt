@@ -4,3 +4,7 @@ mediapipe
 numpy
 google-generativeai
 python-dotenv
+fastapi
+uvicorn[standard]
+python-multipart
+aiofiles
