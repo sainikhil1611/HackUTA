@@ -1,5 +1,5 @@
 opencv-python
-protobuf==4.25.3
+protobuf>=4.25.3,<5.0
 mediapipe
 numpy
 google-generativeai
@@ -11,3 +11,7 @@ aiofiles
 requests
 pydub
 elevenlabs
+langchain
+langchain-google-genai
+langchain-core
+agentuity
