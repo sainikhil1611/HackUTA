@@ -97,8 +97,16 @@ def annotate_video(video_path, analysis_data, output_path, sport_type):
                 'missed_count': shot.get('total_shots_missed_so_far', 0)
             })
     elif sport_type == "soccer":
+        goals_scored = 0
+        goals_missed = 0
         for i, event in enumerate(analysis_data.get('events', [])):
-            is_success = event['event_type'] == 'goal'
+            is_goal = event['event_type'] in ['goal', 'missed_shot']
+            if is_goal:
+                if event['event_type'] == 'goal':
+                    goals_scored += 1
+                else:
+                    goals_missed += 1
+
             audio_path = os.path.join(temp_dir, f"feedback_{i}.mp3")
             try:
                 generate_speech(event['feedback'], audio_path)
@@ -109,13 +117,21 @@ def annotate_video(video_path, analysis_data, output_path, sport_type):
             events.append({
                 'frame_number': timestamp_to_frame(event['timestamp'], fps),
                 'feedback_end_frame': timestamp_to_frame(event['timestamp'], fps) + (4 * fps),
-                'result': 'success' if is_success else 'fail',
+                'result': 'goal' if event['event_type'] == 'goal' else 'missed',
                 'feedback': event['feedback'],
-                'event_type': event['event_type']
+                'event_type': event['event_type'],
+                'goals_scored': goals_scored,
+                'goals_missed': goals_missed
             })
     elif sport_type == "tennis":
+        successful_strokes = 0
+        unsuccessful_strokes = 0
         for i, shot in enumerate(analysis_data.get('shots', [])):
-            is_success = shot['result'] == 'winner'
+            if shot['result'] == 'winner':
+                successful_strokes += 1
+            elif shot['result'] == 'error':
+                unsuccessful_strokes += 1
+
             audio_path = os.path.join(temp_dir, f"feedback_{i}.mp3")
             try:
                 generate_speech(shot['feedback'], audio_path)
@@ -126,9 +142,11 @@ def annotate_video(video_path, analysis_data, output_path, sport_type):
             events.append({
                 'frame_number': timestamp_to_frame(shot['timestamp'], fps),
                 'feedback_end_frame': timestamp_to_frame(shot['timestamp'], fps) + (4 * fps),
-                'result': 'success' if is_success else 'fail',
+                'result': shot['result'],
                 'feedback': shot['feedback'],
-                'shot_type': shot['shot_type']
+                'shot_type': shot['shot_type'],
+                'successful_strokes': successful_strokes,
+                'unsuccessful_strokes': unsuccessful_strokes
             })
 
     print(f"Processing video: {video_path}")
@@ -188,6 +206,16 @@ def annotate_video(video_path, analysis_data, output_path, sport_type):
                         'made': event.get('made_count', 0),
                         'missed': event.get('missed_count', 0)
                     }
+                elif sport_type == "soccer":
+                    current_stats = {
+                        'scored': event.get('goals_scored', 0),
+                        'missed': event.get('goals_missed', 0)
+                    }
+                elif sport_type == "tennis":
+                    current_stats = {
+                        'successful': event.get('successful_strokes', 0),
+                        'unsuccessful': event.get('unsuccessful_strokes', 0)
+                    }
 
                 # Only keep the most recent active feedback
                 if event['frame_number'] <= frame_count <= event['feedback_end_frame']:
@@ -207,8 +235,8 @@ def annotate_video(video_path, analysis_data, output_path, sport_type):
                 current_color = (255, 255, 255)
                 last_event_time = None
 
-        # Draw statistics (basketball specific)
-        if sport_type == "basketball" and current_stats:
+        # Draw statistics for all sports
+        if current_stats:
             font = cv2.FONT_HERSHEY_SIMPLEX
             scale = 0.8
             thickness = 2
@@ -217,18 +245,47 @@ def annotate_video(video_path, analysis_data, output_path, sport_type):
             x = 20
             y = 40
 
-            made = current_stats.get('made', 0)
-            missed = current_stats.get('missed', 0)
+            if sport_type == "basketball":
+                made = current_stats.get('made', 0)
+                missed = current_stats.get('missed', 0)
 
-            made_text = f"Shots Made: {made}"
-            cv2.putText(frame, made_text, (x, y), font, scale, (0, 0, 0), border_thickness, cv2.LINE_AA)
-            made_color = current_color if last_event_result == 'made' else (255, 255, 255)
-            cv2.putText(frame, made_text, (x, y), font, scale, made_color, thickness, cv2.LINE_AA)
+                made_text = f"Shots Made: {made}"
+                cv2.putText(frame, made_text, (x, y), font, scale, (0, 0, 0), border_thickness, cv2.LINE_AA)
+                made_color = current_color if last_event_result == 'made' else (255, 255, 255)
+                cv2.putText(frame, made_text, (x, y), font, scale, made_color, thickness, cv2.LINE_AA)
 
-            missed_text = f"Shots Missed: {missed}"
-            cv2.putText(frame, missed_text, (x, y + spacing), font, scale, (0, 0, 0), border_thickness, cv2.LINE_AA)
-            missed_color = current_color if last_event_result == 'missed' else (255, 255, 255)
-            cv2.putText(frame, missed_text, (x, y + spacing), font, scale, missed_color, thickness, cv2.LINE_AA)
+                missed_text = f"Shots Missed: {missed}"
+                cv2.putText(frame, missed_text, (x, y + spacing), font, scale, (0, 0, 0), border_thickness, cv2.LINE_AA)
+                missed_color = current_color if last_event_result == 'missed' else (255, 255, 255)
+                cv2.putText(frame, missed_text, (x, y + spacing), font, scale, missed_color, thickness, cv2.LINE_AA)
+
+            elif sport_type == "soccer":
+                scored = current_stats.get('scored', 0)
+                missed = current_stats.get('missed', 0)
+
+                scored_text = f"Goals Scored: {scored}"
+                cv2.putText(frame, scored_text, (x, y), font, scale, (0, 0, 0), border_thickness, cv2.LINE_AA)
+                scored_color = current_color if last_event_result == 'goal' else (255, 255, 255)
+                cv2.putText(frame, scored_text, (x, y), font, scale, scored_color, thickness, cv2.LINE_AA)
+
+                missed_text = f"Goals Missed: {missed}"
+                cv2.putText(frame, missed_text, (x, y + spacing), font, scale, (0, 0, 0), border_thickness, cv2.LINE_AA)
+                missed_color = current_color if last_event_result == 'missed' else (255, 255, 255)
+                cv2.putText(frame, missed_text, (x, y + spacing), font, scale, missed_color, thickness, cv2.LINE_AA)
+
+            elif sport_type == "tennis":
+                successful = current_stats.get('successful', 0)
+                unsuccessful = current_stats.get('unsuccessful', 0)
+
+                successful_text = f"Successful Strokes: {successful}"
+                cv2.putText(frame, successful_text, (x, y), font, scale, (0, 0, 0), border_thickness, cv2.LINE_AA)
+                successful_color = current_color if last_event_result == 'winner' else (255, 255, 255)
+                cv2.putText(frame, successful_text, (x, y), font, scale, successful_color, thickness, cv2.LINE_AA)
+
+                unsuccessful_text = f"Unsuccessful Strokes: {unsuccessful}"
+                cv2.putText(frame, unsuccessful_text, (x, y + spacing), font, scale, (0, 0, 0), border_thickness, cv2.LINE_AA)
+                unsuccessful_color = current_color if last_event_result == 'error' else (255, 255, 255)
+                cv2.putText(frame, unsuccessful_text, (x, y + spacing), font, scale, unsuccessful_color, thickness, cv2.LINE_AA)
 
         # Draw feedback - only show current feedback, clearing previous ones
         if current_feedback:
