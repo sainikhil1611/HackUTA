@@ -565,6 +565,10 @@ Copyright 2025 HackUTA Team
 
 ## 👥 Team
 
+1. Narasimha Sainikhil Marisetty
+2. Aakarshan Kumar
+3. Prajwal Mrithyunjay Hulamani
+4. Alaya Bolinski
 Built with ❤️ for HackUTA 2025
 
 ---
