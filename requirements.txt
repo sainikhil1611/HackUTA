@@ -8,3 +8,6 @@ fastapi
 uvicorn[standard]
 python-multipart
 aiofiles
+requests
+pydub
+elevenlabs

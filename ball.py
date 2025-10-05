@@ -2,6 +2,9 @@ import cv2
 import mediapipe as mp
 import numpy as np
 import time
+import os
+import tempfile
+from tts import generate_speech
 
 def parse_timestamp(timestamp):
     minutes, seconds = timestamp.split(':')
@@ -69,11 +72,22 @@ def annotate_video(video_path, analysis_data, output_path, sport_type):
     last_event_result = None
     current_color = (255, 255, 255)
 
+    # Create temporary directory for audio files
+    temp_dir = tempfile.mkdtemp()
+    audio_files = []
+
     # Prepare events based on sport type
     events = []
     if sport_type == "basketball":
-        for shot in analysis_data.get('shots', []):
+        for i, shot in enumerate(analysis_data.get('shots', [])):
             timestamp = shot.get('timestamp_of_outcome') or shot.get('timestamp')
+            audio_path = os.path.join(temp_dir, f"feedback_{i}.mp3")
+            try:
+                generate_speech(shot['feedback'], audio_path)
+                audio_files.append((timestamp_to_frame(timestamp, fps), audio_path))
+            except Exception as e:
+                print(f"Warning: Could not generate audio for feedback {i}: {e}")
+
             events.append({
                 'frame_number': timestamp_to_frame(timestamp, fps),
                 'feedback_end_frame': timestamp_to_frame(timestamp, fps) + (4 * fps),
@@ -83,8 +97,15 @@ def annotate_video(video_path, analysis_data, output_path, sport_type):
                 'missed_count': shot.get('total_shots_missed_so_far', 0)
             })
     elif sport_type == "soccer":
-        for event in analysis_data.get('events', []):
+        for i, event in enumerate(analysis_data.get('events', [])):
             is_success = event['event_type'] == 'goal'
+            audio_path = os.path.join(temp_dir, f"feedback_{i}.mp3")
+            try:
+                generate_speech(event['feedback'], audio_path)
+                audio_files.append((timestamp_to_frame(event['timestamp'], fps), audio_path))
+            except Exception as e:
+                print(f"Warning: Could not generate audio for feedback {i}: {e}")
+
             events.append({
                 'frame_number': timestamp_to_frame(event['timestamp'], fps),
                 'feedback_end_frame': timestamp_to_frame(event['timestamp'], fps) + (4 * fps),
@@ -93,8 +114,15 @@ def annotate_video(video_path, analysis_data, output_path, sport_type):
                 'event_type': event['event_type']
             })
     elif sport_type == "tennis":
-        for shot in analysis_data.get('shots', []):
+        for i, shot in enumerate(analysis_data.get('shots', [])):
             is_success = shot['result'] == 'winner'
+            audio_path = os.path.join(temp_dir, f"feedback_{i}.mp3")
+            try:
+                generate_speech(shot['feedback'], audio_path)
+                audio_files.append((timestamp_to_frame(shot['timestamp'], fps), audio_path))
+            except Exception as e:
+                print(f"Warning: Could not generate audio for feedback {i}: {e}")
+
             events.append({
                 'frame_number': timestamp_to_frame(shot['timestamp'], fps),
                 'feedback_end_frame': timestamp_to_frame(shot['timestamp'], fps) + (4 * fps),
@@ -257,6 +285,55 @@ def annotate_video(video_path, analysis_data, output_path, sport_type):
         out.write(frame)
 
     out.release()
+
+    # Add audio to video using ffmpeg
+    if audio_files:
+        print("Adding audio to video...")
+        temp_video_path = output_path.replace('.mp4', '_temp.mp4')
+        os.rename(output_path, temp_video_path)
+
+        # Create filter complex for audio
+        filter_parts = []
+        audio_inputs = []
+
+        for i, (frame_num, audio_path) in enumerate(audio_files):
+            timestamp_seconds = frame_num / fps
+            audio_inputs.extend(['-i', audio_path])
+            filter_parts.append(f"[{i+1}:a]adelay={int(timestamp_seconds * 1000)}|{int(timestamp_seconds * 1000)}[a{i}]")
+
+        if filter_parts:
+            filter_complex = ';'.join(filter_parts)
+            mix_inputs = ''.join([f"[a{i}]" for i in range(len(audio_files))])
+            filter_complex += f";{mix_inputs}amix=inputs={len(audio_files)}:duration=longest[aout]"
+
+            import subprocess
+            cmd = ['ffmpeg', '-i', temp_video_path] + audio_inputs + [
+                '-filter_complex', filter_complex,
+                '-map', '0:v',
+                '-map', '[aout]',
+                '-c:v', 'copy',
+                '-c:a', 'aac',
+                '-shortest',
+                '-y',
+                output_path
+            ]
+
+            try:
+                subprocess.run(cmd, check=True, capture_output=True)
+                os.remove(temp_video_path)
+                print("Audio integrated successfully!")
+            except subprocess.CalledProcessError as e:
+                print(f"Warning: Could not add audio to video: {e}")
+                print(f"Error output: {e.stderr.decode()}")
+                os.rename(temp_video_path, output_path)
+            except FileNotFoundError:
+                print("Warning: ffmpeg not found. Video saved without audio.")
+                os.rename(temp_video_path, output_path)
+
+    # Cleanup temporary audio files
+    import shutil
+    shutil.rmtree(temp_dir, ignore_errors=True)
+
     print(f"Annotated video saved to: {output_path}")
 
 if __name__ == "__main__":
