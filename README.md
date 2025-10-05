@@ -1,8 +1,6 @@
 # HackUTA
 
-# SportSense
-
-# Sports Video Analysis - Agentic AI System
+# SportSense - Sports Video Analysis - Agentic AI System
 
 An intelligent sports video analysis platform that uses **LangChain agents**, **Agentuity orchestration**, and **multi-modal AI** to provide comprehensive performance analysis for basketball, soccer, and tennis.
 
