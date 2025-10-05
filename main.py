@@ -1,10 +1,12 @@
 from fastapi import FastAPI, File, UploadFile, Form, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, StreamingResponse
 import shutil
+import os
 from pathlib import Path
-from analysis import analyze_video
+from analysis import analyze_video as analyze_video_with_ai
 from ball import annotate_video
+from coaching_rag import generate_coaching_summary
 
 app = FastAPI(title="Sports Video Analysis API")
 
@@ -19,9 +21,7 @@ app.add_middleware(
 
 # Create necessary directories
 UPLOAD_DIR = Path("uploads")
-OUTPUT_DIR = Path("outputs")
 UPLOAD_DIR.mkdir(exist_ok=True)
-OUTPUT_DIR.mkdir(exist_ok=True)
 
 SUPPORTED_SPORTS = ["basketball", "soccer", "tennis"]
 
@@ -47,8 +47,8 @@ async def analyze_video(
     - video: The video file to analyze
 
     Returns:
-    - analysis: JSON analysis data
-    - annotated_video_path: Path to the annotated video
+    - Annotated video file directly
+    - Headers include analysis JSON and coaching summary
     """
 
     if sport.lower() not in SUPPORTED_SPORTS:
@@ -64,6 +64,9 @@ async def analyze_video(
             detail="Uploaded file must be a video"
         )
 
+    video_path = None
+    annotated_video_path = None
+
     try:
         video_filename = f"{sport}_{video.filename}"
         video_path = UPLOAD_DIR / video_filename
@@ -73,10 +76,11 @@ async def analyze_video(
 
         print(f"Video saved to: {video_path}")
 
-        analysis_output_path = OUTPUT_DIR / "sports.json"
+        # Store JSON in root directory
+        analysis_output_path = Path("sports.json")
 
         print(f"Starting analysis for {sport}...")
-        analysis_data = analyze_video(
+        analysis_data = analyze_video_with_ai(
             str(video_path),
             sport.lower(),
             str(analysis_output_path)
@@ -84,7 +88,8 @@ async def analyze_video(
 
         print(f"Analysis complete. Results saved to: {analysis_output_path}")
 
-        annotated_video_path = OUTPUT_DIR / f"{sport}_annotated.mp4"
+        # Create temporary annotated video
+        annotated_video_path = UPLOAD_DIR / f"{sport}_annotated_temp.mp4"
 
         print("Generating annotated video...")
         annotate_video(
@@ -94,26 +99,46 @@ async def analyze_video(
             sport.lower()
         )
 
-        return {
-            "status": "success",
-            "sport": sport,
-            "analysis": analysis_data,
-            "analysis_file": str(analysis_output_path),
-            "annotated_video": str(annotated_video_path) if annotated_video_path.exists() else None
-        }
+        # Check if annotated video was created
+        if not annotated_video_path.exists():
+            raise FileNotFoundError(f"Annotated video was not created at {annotated_video_path}")
+
+        print("Generating coaching summary using RAG...")
+        coaching_summary = generate_coaching_summary(sport.lower(), analysis_data)
+        print(f"Coaching summary generated successfully")
+
+        # Read the video file into memory before cleanup
+        with open(annotated_video_path, "rb") as f:
+            video_bytes = f.read()
+
+        # Return the annotated video as a streaming response
+        from io import BytesIO
+
+        return StreamingResponse(
+            BytesIO(video_bytes),
+            media_type="video/mp4",
+            headers={
+                "Content-Disposition": f"attachment; filename={sport}_annotated.mp4",
+                "X-Analysis-Data": str(analysis_data).replace('"', '\\"'),
+                "X-Coaching-Summary": coaching_summary.replace('"', '\\"')
+            }
+        )
 
     except Exception as e:
         print(f"Error during analysis: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
     finally:
-        if video_path.exists():
+        # Clean up temporary files
+        if video_path and video_path.exists():
             video_path.unlink()
+        if annotated_video_path and annotated_video_path.exists():
+            annotated_video_path.unlink()
 
 @app.get("/download/analysis")
 async def download_analysis():
     """Download the analysis JSON file"""
-    analysis_path = OUTPUT_DIR / "sports.json"
+    analysis_path = Path("sports.json")
 
     if not analysis_path.exists():
         raise HTTPException(status_code=404, detail="Analysis file not found")
@@ -122,20 +147,6 @@ async def download_analysis():
         path=analysis_path,
         media_type="application/json",
         filename="sports.json"
-    )
-
-@app.get("/download/video/{sport}")
-async def download_annotated_video(sport: str):
-    """Download the annotated video file"""
-    video_path = OUTPUT_DIR / f"{sport}_annotated.mp4"
-
-    if not video_path.exists():
-        raise HTTPException(status_code=404, detail="Annotated video not found")
-
-    return FileResponse(
-        path=video_path,
-        media_type="video/mp4",
-        filename=f"{sport}_annotated.mp4"
     )
 
 if __name__ == "__main__":

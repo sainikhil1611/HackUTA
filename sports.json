@@ -1,0 +1,49 @@
+{
+  "shots": [
+    {
+      "timestamp": "0:06.5",
+      "shot_type": "Mid-range jump shot (right wing)",
+      "result": "made",
+      "total_shots_made_so_far": 1,
+      "total_shots_missed_so_far": 0,
+      "total_layups_made_so_far": 0,
+      "feedback": "Maintain consistent follow-through for repeatable accuracy."
+    },
+    {
+      "timestamp": "0:11.5",
+      "shot_type": "Mid-range jump shot (right wing)",
+      "result": "made",
+      "total_shots_made_so_far": 2,
+      "total_shots_missed_so_far": 0,
+      "total_layups_made_so_far": 0,
+      "feedback": "Elevate release point for increased arc and consistency."
+    },
+    {
+      "timestamp": "0:15.5",
+      "shot_type": "Mid-range jump shot (right wing)",
+      "result": "made",
+      "total_shots_made_so_far": 3,
+      "total_shots_missed_so_far": 0,
+      "total_layups_made_so_far": 0,
+      "feedback": "Quicker shot preparation, get feet set faster."
+    },
+    {
+      "timestamp": "0:20.0",
+      "shot_type": "Layup (right side)",
+      "result": "made",
+      "total_shots_made_so_far": 4,
+      "total_shots_missed_so_far": 0,
+      "total_layups_made_so_far": 1,
+      "feedback": "Utilize backboard more consistently for higher percentage finishes."
+    },
+    {
+      "timestamp": "0:26.5",
+      "shot_type": "Mid-range jump shot (right wing)",
+      "result": "made",
+      "total_shots_made_so_far": 5,
+      "total_shots_missed_so_far": 0,
+      "total_layups_made_so_far": 1,
+      "feedback": "Ensure balanced landing for immediate defensive transition."
+    }
+  ]
+}
