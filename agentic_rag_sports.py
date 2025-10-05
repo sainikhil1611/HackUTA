@@ -1,9 +1,9 @@
 # agentic_rag_sports.py
 # pip install -U pip
 # pip install pymupdf pypdf sentence-transformers faiss-cpu python-docx rank-bm25 rapidfuzz
-# Optional OCR: pip install ocrmypdf
+# (Optional OCR) pip install ocrmypdf
 
-import os, re, json, math, uuid, subprocess, shutil
+import os, re, json, math, uuid, subprocess, shutil, argparse, sys
 from dataclasses import dataclass
 from typing import List, Dict, Any, Tuple
 from pathlib import Path
@@ -39,11 +39,11 @@ class KBChunk:
 
 def sliding_window_chunks(txt: str, chunk_size=CHUNK_SIZE, overlap=CHUNK_OVERLAP) -> List[str]:
     txt = re.sub(r"\s+", " ", txt).strip()
-    chunks = []
-    i = 0
+    if not txt:
+        return []
+    chunks, i = [], 0
     while i < len(txt):
-        chunk = txt[i:i+chunk_size]
-        chunks.append(chunk)
+        chunks.append(txt[i:i+chunk_size])
         i += (chunk_size - overlap)
         if i >= len(txt):
             break
@@ -87,7 +87,7 @@ def read_pdf(path: Path) -> List[Tuple[str, Dict[str, Any]]]:
             doc.close()
             used = "pymupdf"
         except Exception as e:
-            print(f"[read_pdf] PyMuPDF failed on {path.name}: {e}")
+            print(f"[read_pdf] PyMuPDF failed on {path.name}: {e}", file=sys.stderr)
 
     # 2) pypdf fallback
     if not items:
@@ -98,21 +98,21 @@ def read_pdf(path: Path) -> List[Tuple[str, Dict[str, Any]]]:
                 try:
                     text = page.extract_text() or ""
                 except Exception as e:
-                    print(f"[read_pdf] pypdf page {i} error in {path.name}: {e}")
+                    print(f"[read_pdf] pypdf page {i} error in {path.name}: {e}", file=sys.stderr)
                     text = ""
                 text = re.sub(r"\s+", " ", text).strip()
                 if text:
                     items.append((text, {"page": i}))
             used = "pypdf"
         except Exception as e:
-            print(f"[read_pdf] pypdf failed on {path.name}: {e}")
+            print(f"[read_pdf] pypdf failed on {path.name}: {e}", file=sys.stderr)
 
     if not items:
-        print(f"[read_pdf] WARNING: {path.name} produced no text via {used or 'none'} (likely scanned).")
+        print(f"[read_pdf] WARNING: {path.name} produced no text via {used or 'none'} (likely scanned).", file=sys.stderr)
 
     return items
 
-# ---------- INDEX BUILD / LOAD (with QUICK LOGS) ----------
+# ---------- INDEX BUILD / LOAD (with quick logs) ----------
 def build_or_load_indexes(data_dir=DATA_DIR, index_dir=INDEX_DIR):
     # QUICK LOGS just before indexing:
     print("[config] DATA_DIR:", data_dir.resolve())
@@ -160,7 +160,7 @@ def build_or_load_indexes(data_dir=DATA_DIR, index_dir=INDEX_DIR):
                     if docs:
                         print(f"[index] OCR succeeded for {path.name} → {ocr_out.name}")
                 except subprocess.CalledProcessError as e:
-                    print(f"[index] OCR failed for {path.name}: {e.stderr.decode(errors='ignore')[:300]}")
+                    print(f"[index] OCR failed for {path.name}: {e.stderr.decode(errors='ignore')[:300]}", file=sys.stderr)
 
         elif ext in (".docx", ".doc"):
             docs = read_docx(path)
@@ -255,12 +255,6 @@ def search(query: str, emb: SentenceTransformer, index, meta, bm25, bm25_data, t
     return selected
 
 # ---------- TOOLS ----------
-def tool_calculator(expr: str) -> str:
-    try:
-        return str(eval(expr, {"__builtins__": {}}, {"sqrt": math.sqrt, "sin": math.sin, "cos": math.cos, "tan": math.tan, "pi": math.pi}))
-    except Exception as e:
-        return f"CalcError: {e}"
-
 def tool_retriever(q: str, ctx) -> List[Dict[str, Any]]:
     emb, index, meta, bm25, bm25_data = ctx
     return search(q, emb, index, meta, bm25, bm25_data)
@@ -289,8 +283,9 @@ def reflect(draft: str, evidences: List[Dict[str, Any]]) -> Tuple[bool, List[str
 
 def synthesize_answer(query: str, evidences: List[Dict[str, Any]]) -> str:
     lines = []
-    lines.append(f"**Answer (Agentic RAG):**")
+    lines.append(f"Answer:")
     lines.append("")
+    # show 2–4 best evidences (already biased to angles/technique)
     for ev in evidences[:4]:
         fn = ev["meta"].get("filename", "")
         sec = ev["meta"].get("section", "")
@@ -298,9 +293,9 @@ def synthesize_answer(query: str, evidences: List[Dict[str, Any]]) -> str:
         cite = f"({fn}" + (f" • {sec}" if sec else "") + (f" • p.{pg}" if pg else "") + ")"
         snippet = ev["text"].strip()
         snippet = re.sub(r"\s+", " ", snippet)
-        lines.append(f"- {snippet}  \n  _Source:_ {cite}")
+        lines.append(f"- {snippet}\n  Source: {cite}")
     lines.append("")
-    lines.append("_Synthesis grounded in retrieved KB passages._")
+    lines.append("Synthesis grounded in retrieved KB passages.")
     return "\n".join(lines)
 
 def agentic_answer(query: str, ctx) -> str:
@@ -309,6 +304,7 @@ def agentic_answer(query: str, ctx) -> str:
 
     for sg in subgoals:
         hits = tool_retriever(sg, ctx)
+        # bias toward angles/technique
         def bias(h):
             s = h["text"].lower()
             bonus = 0.0
@@ -327,23 +323,49 @@ def agentic_answer(query: str, ctx) -> str:
 
     return draft
 
-# ---------- MAIN ----------
-if __name__ == "__main__":
+# ---------- CLI ----------
+def main():
+    p = argparse.ArgumentParser(description="Agentic RAG over your sports knowledge base.")
+    p.add_argument("--ask", type=str, help="Question to answer (string).")
+    p.add_argument("--repl", action="store_true", help="Interactive Q&A loop.")
+    p.add_argument("--once", action="store_true", help="With --repl, answer only one prompt and exit.")
+    args = p.parse_args()
+
     try:
         emb, index, meta, bm25, bm25_data = build_or_load_indexes()
     except Exception as e:
-        print("[fatal] Index build/load failed:", e)
-        raise
+        print("[fatal] Index build/load failed:", e, file=sys.stderr)
+        sys.exit(1)
 
     ctx = (emb, index, meta, bm25, bm25_data)
 
-    # Demo questions
-    questions = [
-        "Give layup and floater release/entry angle guidance and the form cues to improve consistency.",
-        "Summarize basketball jump-shot mechanics and optimal entry angles from the wing.",
-        "For soccer, when should I chip versus place across goal, and what launch angles are typical?"
-    ]
-    for q in questions:
-        print("=" * 80)
-        print("Q:", q)
-        print(agentic_answer(q, ctx))
+    if args.ask:
+        print(agentic_answer(args.ask, ctx))
+        return
+
+    if args.repl:
+        while True:
+            try:
+                q = input("\nAsk: ").strip()
+            except (EOFError, KeyboardInterrupt):
+                print("\nBye.")
+                break
+            if not q:
+                continue
+            print(agentic_answer(q, ctx))
+            if args.once:
+                break
+        return
+
+    # If no args, read a single question from STDIN (useful for piping)
+    if not sys.stdin.isatty():
+        q = sys.stdin.read().strip()
+        if q:
+            print(agentic_answer(q, ctx))
+            return
+
+    # Help hint
+    p.print_help()
+
+if __name__ == "__main__":
+    main()
