@@ -11,13 +11,26 @@ const SCREEN_COPY = {
 };
 
 export default function LoadingScreen() {
-  const { id } = useLocalSearchParams<{ id: string }>();
+  const { id, videoUri, analysisResult, analysisError } = useLocalSearchParams<{ 
+    id: string;
+    videoUri?: string;
+    analysisResult?: string;
+    analysisError?: string;
+  }>();
 
   useEffect(() => {
     // Navigate to session screen after delay
     const timer = setTimeout(() => {
       if (id) {
-        router.replace(`/session/${id}`);
+        router.replace({
+          pathname: `/session/[id]` as any,
+          params: { 
+            id,
+            ...(videoUri ? { videoUri } : {}),
+            ...(analysisResult ? { analysisResult } : {}),
+            ...(analysisError ? { analysisError } : {})
+          }
+        });
       }
     }, SCREEN_COPY.loadingDelay);
 

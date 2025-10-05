@@ -1,9 +1,23 @@
 // Mock API functions for the AI Basketball Coach app
 
 export type Skill = 'jump_shot' | 'free_throw' | 'layup' | 'dribbling';
+export type Sport = 'basketball' | 'soccer' | 'tennis';
 
 export interface SessionResponse {
   id: string;
+}
+
+export interface VideoAnalysisResponse {
+  status: 'success' | 'error';
+  sport: Sport;
+  analysis: any; // Analysis data structure
+  analysis_file: string;
+  annotated_video: string;
+}
+
+export interface VideoAnalysisRequest {
+  sport: Sport;
+  videoFile: File;
 }
 
 export interface Tip {
@@ -158,4 +172,159 @@ export async function getSessions(): Promise<Session[]> {
   ];
   
   return mockSessions;
+}
+
+/**
+ * Function to analyze video using the sports analysis API
+ * @param sport - The sport type for analysis
+ * @param videoFile - The video file to analyze (React Native file object with uri, type, name)
+ * @param baseUrl - The base URL of the analysis server (default: http://10.234.129.141:8000)
+ * @returns Promise resolving to analysis response
+ */
+export async function analyzeVideo(
+  sport: Sport, 
+  videoFile: any, // React Native file object
+  baseUrl: string = 'http://10.234.129.141:8000'
+): Promise<VideoAnalysisResponse> {
+  try {
+    // Validate inputs
+    if (!sport || !videoFile) {
+      throw new Error('Sport and video file are required for analysis');
+    }
+
+    // Check if video file is valid (React Native format)
+    if (!videoFile.type || !videoFile.type.startsWith('video/')) {
+      throw new Error('Invalid file type. Please provide a video file.');
+    }
+
+    const formData = new FormData();
+    formData.append('sport', sport);
+    
+    // For React Native, append the file with uri, type, and name
+    formData.append('video', videoFile as any);
+
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 120000); // 2 minute timeout
+
+    console.log(`Starting video analysis request to: ${baseUrl}/analyze`);
+    console.log(`Video file info:`, { type: videoFile.type, name: videoFile.name });
+
+    try {
+      const response = await fetch(`${baseUrl}/analyze`, {
+        method: 'POST',
+        body: formData,
+        signal: controller.signal,
+        headers: {
+          'Content-Type': 'multipart/form-data',
+        },
+      });
+
+      console.log(`Analysis response status: ${response.status}`);
+
+      clearTimeout(timeoutId);
+
+      if (!response.ok) {
+        let errorMessage = `Analysis failed with status ${response.status}`;
+        
+        switch (response.status) {
+          case 400:
+            errorMessage = 'Invalid video format or sport type. Please check your inputs.';
+            break;
+          case 404:
+            errorMessage = 'Analysis service not found. Please check server connection.';
+            break;
+          case 413:
+            errorMessage = 'Video file is too large. Please use a smaller file.';
+            break;
+          case 500:
+            errorMessage = 'Server error during analysis. Please try again later.';
+            break;
+          case 503:
+            errorMessage = 'Analysis service is temporarily unavailable. Please try again later.';
+            break;
+        }
+        
+        throw new Error(errorMessage);
+      }
+
+      const result = await response.json();
+      
+      // Validate response structure
+      if (!result.status || !result.sport) {
+        throw new Error('Invalid response format from analysis service');
+      }
+
+      return result;
+    } catch (fetchError: any) {
+      clearTimeout(timeoutId);
+      
+      if (fetchError.name === 'AbortError') {
+        throw new Error('Analysis request timed out after 2 minutes. The server may be processing or unavailable.');
+      }
+      
+      throw fetchError;
+    }
+  } catch (error: any) {
+    console.error('Video analysis failed:', error);
+    
+    // Enhance error messages for common network issues
+    if (error.message?.includes('fetch')) {
+      throw new Error('Network error: Unable to connect to analysis server. Please check your internet connection.');
+    }
+    
+    throw error;
+  }
+}
+
+/**
+ * Function to get supported sports from the analysis API
+ * @param baseUrl - The base URL of the analysis server (default: http://10.234.129.141:8000)
+ * @returns Promise resolving to array of supported sports
+ */
+export async function getSupportedSports(baseUrl: string = 'http://10.234.129.141:8000'): Promise<Sport[]> {
+  try {
+    const response = await fetch(`${baseUrl}/sports`);
+    
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
+
+    const sports = await response.json();
+    return sports;
+  } catch (error) {
+    console.error('Failed to get supported sports:', error);
+    // Return default sports if API fails
+    return ['basketball', 'soccer', 'tennis'];
+  }
+}
+
+/**
+ * Function to download analysis JSON from the analysis API
+ * @param baseUrl - The base URL of the analysis server (default: http://10.234.129.141:8000)
+ * @returns Promise resolving to analysis JSON data
+ */
+export async function downloadAnalysis(baseUrl: string = 'http://10.234.129.141:8000'): Promise<any> {
+  try {
+    const response = await fetch(`${baseUrl}/download/analysis`);
+    
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
+
+    const analysis = await response.json();
+    return analysis;
+  } catch (error) {
+    console.error('Failed to download analysis:', error);
+    throw error;
+  }
+}
+
+/**
+ * Function to get annotated video URL from the analysis API
+ * @param sport - The sport type
+ * @param baseUrl - The base URL of the analysis server (default: http://10.234.129.141:8000)
+ * @returns URL string for the annotated video
+ */
+export function getAnnotatedVideoUrl(sport: Sport, baseUrl: string = 'http://10.234.129.141:8000'): string {
+  return `${baseUrl}/download/video/${sport}`;
 }

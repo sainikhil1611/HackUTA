@@ -30,21 +30,8 @@ export default function HomeScreen() {
 
         {/* Secondary links row */}
         <View style={styles.secondaryLinksContainer}>
-          <TouchableOpacity 
-            onPress={() => router.push('/sport')}
-            style={styles.linkButton}
-            activeOpacity={0.7}
-          >
-            <Text style={styles.linkText}>Skip to Sport</Text>
-          </TouchableOpacity>
+
           
-          <TouchableOpacity 
-            onPress={() => router.push('/session/preview')}
-            style={styles.linkButton}
-            activeOpacity={0.7}
-          >
-            <Text style={styles.linkText}>See Sample Session</Text>
-          </TouchableOpacity>
         </View>
       </View>
     </SafeAreaView>

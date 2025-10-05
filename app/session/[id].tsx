@@ -10,16 +10,23 @@ import { getSession, getSessions, Session, Tip } from '../../lib/api';
 import PastSessionsDrawer from '../../components/PastSessionsDrawer';
 
 export default function SessionScreen() {
-  const { id } = useLocalSearchParams<{ id: string }>();
+  const { id, videoUri, analysisResult, analysisError } = useLocalSearchParams<{ 
+    id: string;
+    videoUri?: string;
+    analysisResult?: string;
+    analysisError?: string;
+  }>();
   const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [firedTips, setFiredTips] = useState<Set<number>>(new Set());
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [sessions, setSessions] = useState<Session[]>([]);
+  const [analysis, setAnalysis] = useState<any>(null);
+  const [analysisVideoUrl, setAnalysisVideoUrl] = useState<string | null>(null);
   
   const videoRef = useRef<Video>(null);
-  const pollIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const pollIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const bottomSheetRef = useRef<BottomSheet>(null);
   const insets = useSafeAreaInsets();
   const { width: screenWidth, height: screenHeight } = useWindowDimensions();
@@ -31,12 +38,72 @@ export default function SessionScreen() {
   useEffect(() => {
     loadSession();
     loadSessions();
+    processAnalysisResult();
     return () => {
       if (pollIntervalRef.current) {
         clearInterval(pollIntervalRef.current);
       }
     };
   }, [id]);
+
+  // Process analysis result if available
+  const processAnalysisResult = () => {
+    if (analysisResult) {
+      try {
+        const parsedAnalysis = JSON.parse(analysisResult);
+        
+        // Validate the parsed analysis structure
+        if (!parsedAnalysis || typeof parsedAnalysis !== 'object') {
+          throw new Error('Invalid analysis data structure');
+        }
+        
+        // Set analysis data if available
+        if (parsedAnalysis.analysis) {
+          setAnalysis(parsedAnalysis.analysis);
+        } else {
+          console.warn('No analysis data found in response');
+          setError('Analysis completed but no data was returned');
+        }
+        
+        // Set the annotated video URL if available
+        if (parsedAnalysis.annotated_video) {
+          // Construct full URL for annotated video
+          const baseUrl = 'http://localhost:8000';
+          const videoUrl = `${baseUrl}/${parsedAnalysis.annotated_video}`;
+          setAnalysisVideoUrl(videoUrl);
+          console.log('Annotated video URL set:', videoUrl);
+        } else {
+          console.warn('No annotated video available in analysis result');
+        }
+        
+        console.log('Analysis processed successfully:', parsedAnalysis);
+        
+        // Show success toast
+        Toast.show({
+          type: 'success',
+          text1: 'Analysis Complete',
+          text2: 'Your video has been analyzed successfully!',
+        });
+        
+      } catch (err: any) {
+        console.error('Failed to parse analysis result:', err);
+        const errorMessage = err.message || 'Failed to process analysis result';
+        setError(errorMessage);
+        Toast.show({
+          type: 'error',
+          text1: 'Processing Error',
+          text2: errorMessage,
+        });
+      }
+    } else if (analysisError) {
+      setError(analysisError);
+      Toast.show({
+        type: 'error',
+        text1: 'Analysis Failed',
+        text2: analysisError,
+      });
+    }
+  };
 
   // Android back handler for drawer
   useEffect(() => {
@@ -178,12 +245,12 @@ export default function SessionScreen() {
       </View>
 
       {/* Mobile Video Section - 70% of screen */}
-      {session?.annotatedVideoUrl && (
+      {(videoUri || analysisVideoUrl || session?.annotatedVideoUrl) && (
         <View style={[styles.mobileVideoContainer, { height: screenHeight * 0.7 }]}>
           <Video
             ref={videoRef}
             style={styles.mobileVideo}
-            source={{ uri: session.annotatedVideoUrl }}
+            source={{ uri: analysisVideoUrl || videoUri || session?.annotatedVideoUrl || '' }}
             useNativeControls
             resizeMode={ResizeMode.CONTAIN}
             shouldPlay
@@ -204,7 +271,9 @@ export default function SessionScreen() {
       >
         {/* Tips Card Header */}
         <View style={styles.mobileCoachTipsHeader}>
-          <Text style={styles.mobileCoachTipsTitle}>Coach Tips</Text>
+          <Text style={styles.mobileCoachTipsTitle}>
+            {analysis ? 'AI Analysis Results' : 'Coach Tips'}
+          </Text>
           <TouchableOpacity
             style={styles.pastSessionsButton}
             onPress={handlePastSessionsPress}
@@ -213,14 +282,14 @@ export default function SessionScreen() {
           </TouchableOpacity>
         </View>
 
-        {/* Tips FlatList */}
+        {/* Tips/Analysis FlatList */}
         <BottomSheetFlatList
-          data={session?.tips || []}
-          keyExtractor={(_, index) => index.toString()}
-          renderItem={({ item: tip, index }) => (
+          data={analysis ? [{ text: JSON.stringify(analysis, null, 2), t: 0 }] : (session?.tips || [])}
+          keyExtractor={(_: any, index: number) => index.toString()}
+          renderItem={({ item, index }: { item: any; index: number }) => (
             <View style={styles.tipCard}>
-              <Text style={styles.tipText}>{tip.text}</Text>
-              <Text style={styles.tipTime}>@ {tip.t}s</Text>
+              <Text style={styles.tipText}>{item.text}</Text>
+              {!analysis && <Text style={styles.tipTime}>@ {item.t}s</Text>}
             </View>
           )}
           contentContainerStyle={styles.mobileTipsListContent}
@@ -254,7 +323,9 @@ export default function SessionScreen() {
       >
         {/* Panel header */}
         <View style={styles.panelHeader}>
-          <Text style={styles.panelTitle}>Coach Tips</Text>
+          <Text style={styles.panelTitle}>
+            {analysis ? 'AI Analysis Results' : 'Coach Tips'}
+          </Text>
           <TouchableOpacity
             style={styles.pastSessionsButton}
             onPress={handlePastSessionsPress}
@@ -263,19 +334,25 @@ export default function SessionScreen() {
           </TouchableOpacity>
         </View>
 
-        {/* Tips list */}
+        {/* Tips/Analysis list */}
         <ScrollView style={styles.tipsList} showsVerticalScrollIndicator={false}>
-          {session?.tips.map((tip, index) => (
-            <View key={index} style={styles.tipCard}>
-              <Text style={styles.tipText}>{tip.text}</Text>
-              <Text style={styles.tipTime}>@ {tip.t}s</Text>
+          {analysis ? (
+            <View style={styles.tipCard}>
+              <Text style={styles.tipText}>{JSON.stringify(analysis, null, 2)}</Text>
             </View>
-          ))}
+          ) : (
+            session?.tips.map((tip, index) => (
+              <View key={index} style={styles.tipCard}>
+                <Text style={styles.tipText}>{tip.text}</Text>
+                <Text style={styles.tipTime}>@ {tip.t}s</Text>
+              </View>
+            ))
+          )}
         </ScrollView>
       </View>
 
       {/* PiP Video Player */}
-      {session?.annotatedVideoUrl && (
+      {(videoUri || analysisVideoUrl || session?.annotatedVideoUrl) && (
         <View
           style={[
             styles.pipContainer,
@@ -288,7 +365,7 @@ export default function SessionScreen() {
           <Video
             ref={videoRef}
             style={styles.pipVideo}
-            source={{ uri: session.annotatedVideoUrl }}
+            source={{ uri: analysisVideoUrl || videoUri || session?.annotatedVideoUrl || '' }}
             useNativeControls
             resizeMode={ResizeMode.CONTAIN}
             shouldPlay
