@@ -4,7 +4,7 @@ import numpy as np
 import time
 import os
 import tempfile
-from tts import generate_speech
+from voice import generate_speech
 
 def parse_timestamp(timestamp):
     minutes, seconds = timestamp.split(':')
